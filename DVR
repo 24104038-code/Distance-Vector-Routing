@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distance Vector Routing Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        canvas {
+            touch-action: none;
+        }
+        .table-container {
+            transition: all 0.3s ease-in-out;
+        }
+        .table-cell-updated {
+            animation: flash-green 1s;
+        }
+        @keyframes flash-green {
+            0% { background-color: #a7f3d0; }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-6 lg:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Distance Vector Routing Simulator</h1>
+            <p class="text-md text-gray-600 mt-2">Visualize the Bellman-Ford algorithm in action.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Left Column: Controls & Network Visualization -->
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Network Topology</h2>
+                
+                <!-- Control Buttons -->
+                <div class="flex flex-wrap gap-3 mb-4">
+                    <button id="addNodeBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Add Node</button>
+                    <button id="addLinkBtn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Add Link</button>
+                    <button id="stepBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Step Update</button>
+                    <button id="autoRunBtn" class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Auto-Run</button>
+                    <button id="resetBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Reset</button>
+                </div>
+
+                <!-- Canvas for Network Drawing -->
+                <div class="w-full h-96 bg-gray-50 border-2 border-gray-200 rounded-lg overflow-hidden">
+                    <canvas id="networkCanvas"></canvas>
+                </div>
+                <p id="status" class="mt-4 text-center text-lg font-medium text-gray-700 h-6"></p>
+            </div>
+
+            <!-- Right Column: Routing Tables -->
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Routing Tables</h2>
+                <div id="routingTablesContainer" class="space-y-6 overflow-y-auto max-h-[70vh]">
+                    <p class="text-gray-500">Add nodes to see their routing tables.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Modal for User Input -->
+    <div id="inputModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg shadow-2xl p-8 w-11/12 md:w-1/3">
+            <h3 id="modalTitle" class="text-2xl font-bold mb-6">Modal Title</h3>
+            <div id="modalBody" class="space-y-4">
+                <!-- Dynamic content will be injected here -->
+            </div>
+            <div class="mt-8 flex justify-end space-x-4">
+                <button id="modalCancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button id="modalConfirm" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const routingTablesContainer = document.getElementById('routingTablesContainer');
+
+        // Modal elements
+        const modal = document.getElementById('inputModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+        const modalConfirm = document.getElementById('modalConfirm');
+        const modalCancel = document.getElementById('modalCancel');
+
+        let nodes = [];
+        let links = [];
+        let routingTables = {};
+        let simulationInterval = null;
+        let isDragging = false;
+        let draggedNode = null;
+        let offsetX, offsetY;
+
+        // --- Core Simulation State ---
+        function resetSimulation() {
+            nodes = [];
+            links = [];
+            routingTables = {};
+            clearInterval(simulationInterval);
+            simulationInterval = null;
+            document.getElementById('autoRunBtn').textContent = 'Auto-Run';
+            statusEl.textContent = 'Simulation Reset.';
+            setTimeout(() => statusEl.textContent = '', 2000);
+            drawAll();
+        }
+
+        function initialize() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Button Listeners
+            document.getElementById('addNodeBtn').addEventListener('click', () => showModal('addNode'));
+            document.getElementById('addLinkBtn').addEventListener('click', () => showModal('addLink'));
+            document.getElementById('resetBtn').addEventListener('click', resetSimulation);
+            document.getElementById('stepBtn').addEventListener('click', updateStep);
+            document.getElementById('autoRunBtn').addEventListener('click', toggleAutoRun);
+            
+            // Canvas Listeners
+            canvas.addEventListener('mousedown', startDrag);
+            canvas.addEventListener('mousemove', drag);
+            canvas.addEventListener('mouseup', stopDrag);
+            canvas.addEventListener('mouseleave', stopDrag);
+
+            // Modal Listeners
+            modalCancel.addEventListener('click', hideModal);
+        }
+
+        function resizeCanvas() {
+            const parent = canvas.parentElement;
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
+            drawAll();
+        }
+
+        // --- Drawing Functions ---
+        function drawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawLinks();
+            drawNodes();
+            updateRoutingTablesUI();
+        }
+
+        function drawNodes() {
+            nodes.forEach(node => {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, 20, 0, 2 * Math.PI);
+                ctx.fillStyle = '#3b82f6';
+                ctx.fill();
+                ctx.strokeStyle = '#1e40af';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 16px Inter';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(node.id, node.x, node.y);
+            });
+        }
+
+        function drawLinks() {
+            links.forEach(link => {
+                const source = nodes.find(n => n.id === link.source);
+                const target = nodes.find(n => n.id === link.target);
+                if (!source || !target) return;
+
+                ctx.beginPath();
+                ctx.moveTo(source.x, source.y);
+                ctx.lineTo(target.x, target.y);
+                ctx.strokeStyle = '#4b5563';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw cost
+                const midX = (source.x + target.x) / 2;
+                const midY = (source.y + target.y) / 2;
+                ctx.fillStyle = '#1f2937';
+                ctx.font = 'bold 14px Inter';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Add a small background for readability
+                const textWidth = ctx.measureText(link.cost).width;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(midX - textWidth / 2 - 4, midY - 10, textWidth + 8, 20);
+
+                ctx.fillStyle = '#1f2937';
+                ctx.fillText(link.cost, midX, midY);
+            });
+        }
+
+        // --- UI & Interaction ---
+        function updateRoutingTablesUI(updatedEntries = {}) {
+            if (nodes.length === 0) {
+                routingTablesContainer.innerHTML = `<p class="text-gray-500">Add nodes to see their routing tables.</p>`;
+                return;
+            }
+            
+            routingTablesContainer.innerHTML = ''; // Clear previous tables
+            nodes.forEach(node => {
+                const table = routingTables[node.id];
+                const container = document.createElement('div');
+                container.className = 'table-container';
+
+                let tableHTML = `
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Table for Node ${node.id}</h3>
+                    <div class="overflow-x-auto rounded-lg border border-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="whitespace-nowrap px-4 py-2 text-left font-medium text-gray-900">Destination</th>
+                                <th class="whitespace-nowrap px-4 py-2 text-left font-medium text-gray-900">Next Hop</th>
+                                <th class="whitespace-nowrap px-4 py-2 text-left font-medium text-gray-900">Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 bg-white">
+                `;
+
+                if (table) {
+                     Object.entries(table).sort().forEach(([dest, info]) => {
+                        const isUpdated = updatedEntries[node.id] && updatedEntries[node.id].has(dest);
+                        const rowClass = isUpdated ? 'table-cell-updated' : '';
+                        tableHTML += `
+                            <tr class="${rowClass}">
+                                <td class="whitespace-nowrap px-4 py-2 font-medium text-gray-900">${dest}</td>
+                                <td class="whitespace-nowrap px-4 py-2 text-gray-700">${info.nextHop}</td>
+                                <td class="whitespace-nowrap px-4 py-2 text-gray-700">${info.cost}</td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                tableHTML += `</tbody></table></div>`;
+                container.innerHTML = tableHTML;
+                routingTablesContainer.appendChild(container);
+            });
+        }
+        
+        // --- Drag & Drop ---
+        function startDrag(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (let i = nodes.length - 1; i >= 0; i--) {
+                const node = nodes[i];
+                const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+                if (distance < 20) {
+                    isDragging = true;
+                    draggedNode = node;
+                    offsetX = x - node.x;
+                    offsetY = y - node.y;
+                    break;
+                }
+            }
+        }
+
+        function drag(e) {
+            if (isDragging && draggedNode) {
+                const rect = canvas.getBoundingClientRect();
+                draggedNode.x = e.clientX - rect.left - offsetX;
+                draggedNode.y = e.clientY - rect.top - offsetY;
+                drawAll();
+            }
+        }
+
+        function stopDrag() {
+            isDragging = false;
+            draggedNode = null;
+        }
+
+        // --- Modal Logic ---
+        function showModal(type) {
+            if (type === 'addNode') {
+                modalTitle.textContent = 'Add a New Node';
+                modalBody.innerHTML = `
+                    <label for="nodeName" class="block text-sm font-medium text-gray-700">Node Name (e.g., A, B, C)</label>
+                    <input type="text" id="nodeName" maxlength="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                `;
+                modalConfirm.onclick = confirmAddNode;
+            } else if (type === 'addLink') {
+                 if (nodes.length < 2) {
+                    statusEl.textContent = 'You need at least two nodes to add a link.';
+                    setTimeout(() => statusEl.textContent = '', 3000);
+                    return;
+                }
+                modalTitle.textContent = 'Add a New Link';
+                let options = nodes.map(n => `<option value="${n.id}">${n.id}</option>`).join('');
+                modalBody.innerHTML = `
+                    <div>
+                        <label for="sourceNode" class="block text-sm font-medium text-gray-700">Source Node</label>
+                        <select id="sourceNode" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">${options}</select>
+                    </div>
+                    <div>
+                        <label for="targetNode" class="block text-sm font-medium text-gray-700">Target Node</label>
+                        <select id="targetNode" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">${options}</select>
+                    </div>
+                    <div>
+                        <label for="linkCost" class="block text-sm font-medium text-gray-700">Cost (integer > 0)</label>
+                        <input type="number" id="linkCost" min="1" value="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                    </div>
+                `;
+                modalConfirm.onclick = confirmAddLink;
+            }
+            modal.classList.remove('hidden');
+        }
+
+        function hideModal() {
+            modal.classList.add('hidden');
+        }
+
+        function confirmAddNode() {
+            const nameInput = document.getElementById('nodeName');
+            const name = nameInput.value.trim().toUpperCase();
+            if (!name) {
+                alert("Node name cannot be empty.");
+                return;
+            }
+            if (nodes.some(n => n.id === name)) {
+                alert("A node with this name already exists.");
+                return;
+            }
+
+            nodes.push({
+                id: name,
+                x: 50 + Math.random() * (canvas.width - 100),
+                y: 50 + Math.random() * (canvas.height - 100)
+            });
+
+            // Initialize routing table for the new node
+            routingTables[name] = { [name]: { nextHop: name, cost: 0 } };
+            
+            hideModal();
+            drawAll();
+        }
+
+        function confirmAddLink() {
+            const sourceId = document.getElementById('sourceNode').value;
+            const targetId = document.getElementById('targetNode').value;
+            const cost = parseInt(document.getElementById('linkCost').value, 10);
+
+            if (sourceId === targetId) {
+                alert("Source and target nodes cannot be the same.");
+                return;
+            }
+            if (isNaN(cost) || cost <= 0) {
+                alert("Cost must be a positive integer.");
+                return;
+            }
+            if (links.some(l => (l.source === sourceId && l.target === targetId) || (l.source === targetId && l.target === sourceId))) {
+                alert("A link between these nodes already exists.");
+                return;
+            }
+            
+            links.push({ source: sourceId, target: targetId, cost });
+
+            // Update routing tables with direct link info
+            routingTables[sourceId][targetId] = { nextHop: targetId, cost: cost };
+            routingTables[targetId][sourceId] = { nextHop: sourceId, cost: cost };
+
+            hideModal();
+            drawAll();
+        }
+        
+        // --- Distance Vector Algorithm ---
+
+        function updateStep() {
+            if (nodes.length === 0) {
+                statusEl.textContent = 'Add nodes to start the simulation.';
+                setTimeout(() => statusEl.textContent = '', 3000);
+                return false;
+            }
+
+            let somethingChanged = false;
+            const updatedEntries = {};
+            const oldTables = JSON.parse(JSON.stringify(routingTables)); // Deep copy
+
+            // For each node, get routing tables from its neighbors and update its own table
+            for (const node of nodes) {
+                const neighbors = links
+                    .filter(l => l.source === node.id || l.target === node.id)
+                    .map(l => (l.source === node.id ? l.target : l.source));
+
+                for (const neighborId of neighbors) {
+                    const neighborTable = oldTables[neighborId];
+                    const costToNeighbor = links.find(l => (l.source === node.id && l.target === neighborId) || (l.source === neighborId && l.target === node.id)).cost;
+
+                    if (!neighborTable) continue;
+
+                    // Bellman-Ford equation: cost(node, dest) = min(cost(node, dest), cost(node, neighbor) + cost(neighbor, dest))
+                    for (const dest in neighborTable) {
+                        const newCost = costToNeighbor + neighborTable[dest].cost;
+                        
+                        // If no route to dest exists, or new route is shorter
+                        if (!routingTables[node.id][dest] || newCost < routingTables[node.id][dest].cost) {
+                            routingTables[node.id][dest] = { nextHop: neighborId, cost: newCost };
+                            somethingChanged = true;
+                            if (!updatedEntries[node.id]) updatedEntries[node.id] = new Set();
+                            updatedEntries[node.id].add(dest);
+                        }
+                    }
+                }
+            }
+
+            if (somethingChanged) {
+                statusEl.textContent = "Tables updated...";
+            } else {
+                statusEl.textContent = "Convergence reached. No more updates.";
+                if(simulationInterval) {
+                     clearInterval(simulationInterval);
+                     simulationInterval = null;
+                     document.getElementById('autoRunBtn').textContent = 'Auto-Run';
+                }
+            }
+            
+            updateRoutingTablesUI(updatedEntries);
+            return somethingChanged;
+        }
+
+        function toggleAutoRun() {
+            const btn = document.getElementById('autoRunBtn');
+            if (simulationInterval) {
+                clearInterval(simulationInterval);
+                simulationInterval = null;
+                btn.textContent = 'Auto-Run';
+                statusEl.textContent = 'Auto-run paused.';
+            } else {
+                btn.textContent = 'Pause';
+                statusEl.textContent = 'Auto-running...';
+                simulationInterval = setInterval(() => {
+                    const changed = updateStep();
+                    if (!changed) {
+                        clearInterval(simulationInterval);
+                        simulationInterval = null;
+                        btn.textContent = 'Auto-Run';
+                    }
+                }, 1500);
+            }
+        }
+        
+        // Start the application
+        initialize();
+    </script>
+
+</body>
+</html>
