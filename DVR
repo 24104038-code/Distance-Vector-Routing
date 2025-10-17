@@ -1,353 +1,66 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Distance Vector Routing Simulator</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      overflow-x: hidden;
-    }
-    canvas {
-      touch-action: none;
-    }
-    .table-container {
-      transition: all 0.3s ease-in-out;
-    }
-    .table-cell-updated {
-      animation: flash-green 1s;
-    }
-    @keyframes flash-green {
-      0% { background-color: #a7f3d0; }
-      100% { background-color: transparent; }
-    }
-  </style>
-</head>
-<body class="bg-gray-100 text-gray-800">
+def get_input():
+    size = int(input())
+    matrix = []
+    for i in range(size * size):
+        val = input().strip()
+        if val == 'f':
+            matrix.append(float('inf'))
+        else:
+            matrix.append(int(val))
+    return size, matrix
 
-  <div class="container mx-auto p-4 md:p-6 lg:p-8">
-    <header class="text-center mb-6">
-      <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Distance Vector Routing Simulator</h1>
-      <p class="text-md text-gray-600 mt-2">Visualize the Bellman-Ford algorithm in action.</p>
-    </header>
+def make_2d_matrix(size, matrix):
+    result = []
+    index = 0
+    for i in range(size):
+        row = []
+        for j in range(size):
+            row.append(matrix[index])
+            index += 1
+        result.append(row)
+    return result
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column -->
-      <div class="lg:col-span-2 bg-white rounded-xl shadow-lg p-6">
-        <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Network Topology</h2>
-        <div class="flex flex-wrap gap-3 mb-4">
-          <button id="addNodeBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Add Node</button>
-          <button id="addLinkBtn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Add Link</button>
-          <button id="stepBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Step Update</button>
-          <button id="autoRunBtn" class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Auto-Run</button>
-          <button id="resetBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">Reset</button>
-        </div>
+def find_shortest_paths(size, graph):
+    answer = []
+    for start_node in range(size):
+        distances = [float('inf')] * size
+        distances[start_node] = 0
+        answer.append(distances)
 
-        <div class="w-full h-96 bg-gray-50 border-2 border-gray-200 rounded-lg overflow-hidden">
-          <canvas id="networkCanvas"></canvas>
-        </div>
-        <p id="status" class="mt-4 text-center text-lg font-medium text-gray-700 h-6"></p>
-      </div>
+    for times in range(size-1):
+        for i in range(size):
+            for j in range(size):
+                for k in range(size):
+                    if graph[j][k] != float('inf') and answer[i][j] != float('inf'):
+                        if answer[i][k] > answer[i][j] + graph[j][k]:
+                            answer[i][k] = answer[i][j] + graph[j][k]
 
-      <!-- Right Column -->
-      <div class="lg:col-span-1 bg-white rounded-xl shadow-lg p-6">
-        <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Routing Tables</h2>
-        <div id="routingTablesContainer" class="space-y-6 overflow-y-auto max-h-[70vh]">
-          <p class="text-gray-500">Add nodes to see their routing tables.</p>
-        </div>
-      </div>
-    </div>
-  </div>
+    for i in range(size):
+        for j in range(size):
+            for k in range(size):
+                if graph[j][k] != float('inf') and answer[i][j] != float('inf'):
+                    if answer[i][k] > answer[i][j] + graph[j][k]:
+                        answer[i] = ['None'] * size
+                        break
+            if 'None' in answer[i]:
+                break
 
-  <!-- Modal -->
-  <div id="inputModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center hidden z-50">
-    <div class="bg-white rounded-lg shadow-2xl p-8 w-11/12 md:w-1/3">
-      <h3 id="modalTitle" class="text-2xl font-bold mb-6">Modal Title</h3>
-      <div id="modalBody" class="space-y-4"></div>
-      <div class="mt-8 flex justify-end space-x-4">
-        <button id="modalCancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
-        <button id="modalConfirm" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Confirm</button>
-      </div>
-    </div>
-  </div>
+    return answer
 
-  <script>
-    const canvas = document.getElementById('networkCanvas');
-    const ctx = canvas.getContext('2d');
-    const statusEl = document.getElementById('status');
-    const routingTablesContainer = document.getElementById('routingTablesContainer');
-    const modal = document.getElementById('inputModal');
-    const modalTitle = document.getElementById('modalTitle');
-    const modalBody = document.getElementById('modalBody');
-    const modalConfirm = document.getElementById('modalConfirm');
-    const modalCancel = document.getElementById('modalCancel');
+def print_answer(answer):
+    for i in range(len(answer)):
+        result = []
+        for x in answer[i]:
+            if isinstance(x, str):
+                result.append(x)
+            elif x == float('inf'):
+                result.append('None')
+            else:
+                result.append(str(int(x)))
+        print(f"Node {i}: [{', '.join(result)}]")
 
-    let nodes = [], links = [], routingTables = {};
-    let simulationInterval = null, isDragging = false, draggedNode = null, offsetX, offsetY;
-
-    function resetSimulation() {
-      nodes = [];
-      links = [];
-      routingTables = {};
-      clearInterval(simulationInterval);
-      simulationInterval = null;
-      document.getElementById('autoRunBtn').textContent = 'Auto-Run';
-      statusEl.textContent = 'Simulation Reset.';
-      setTimeout(() => statusEl.textContent = '', 2000);
-      drawAll();
-    }
-
-    function initialize() {
-      resizeCanvas();
-      window.addEventListener('resize', resizeCanvas);
-      document.getElementById('addNodeBtn').addEventListener('click', () => showModal('addNode'));
-      document.getElementById('addLinkBtn').addEventListener('click', () => showModal('addLink'));
-      document.getElementById('resetBtn').addEventListener('click', resetSimulation);
-      document.getElementById('stepBtn').addEventListener('click', updateStep);
-      document.getElementById('autoRunBtn').addEventListener('click', toggleAutoRun);
-      canvas.addEventListener('mousedown', startDrag);
-      canvas.addEventListener('mousemove', drag);
-      canvas.addEventListener('mouseup', stopDrag);
-      canvas.addEventListener('mouseleave', stopDrag);
-      modalCancel.addEventListener('click', hideModal);
-    }
-
-    function resizeCanvas() {
-      const parent = canvas.parentElement;
-      canvas.width = parent.clientWidth;
-      canvas.height = parent.clientHeight;
-      drawAll();
-    }
-
-    function drawAll() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawLinks();
-      drawNodes();
-      updateRoutingTablesUI();
-    }
-
-    function drawNodes() {
-      nodes.forEach(node => {
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 20, 0, 2 * Math.PI);
-        ctx.fillStyle = '#3b82f6';
-        ctx.fill();
-        ctx.strokeStyle = '#1e40af';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.fillStyle = 'white';
-        ctx.font = 'bold 16px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(node.id, node.x, node.y);
-      });
-    }
-
-    function drawLinks() {
-      links.forEach(link => {
-        const source = nodes.find(n => n.id === link.source);
-        const target = nodes.find(n => n.id === link.target);
-        if (!source || !target) return;
-        ctx.beginPath();
-        ctx.moveTo(source.x, source.y);
-        ctx.lineTo(target.x, target.y);
-        ctx.strokeStyle = '#4b5563';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        const midX = (source.x + target.x) / 2;
-        const midY = (source.y + target.y) / 2;
-        const textWidth = ctx.measureText(link.cost).width;
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.fillRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
-        ctx.fillStyle = '#1f2937';
-        ctx.font = 'bold 14px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(link.cost, midX, midY);
-      });
-    }
-
-    function updateRoutingTablesUI(updatedEntries = {}) {
-      if (nodes.length === 0) {
-        routingTablesContainer.innerHTML = `<p class="text-gray-500">Add nodes to see their routing tables.</p>`;
-        return;
-      }
-      routingTablesContainer.innerHTML = '';
-      nodes.forEach(node => {
-        const table = routingTables[node.id];
-        const container = document.createElement('div');
-        container.className = 'table-container';
-        let html = `
-          <h3 class="text-lg font-semibold text-gray-800 mb-2">Table for Node ${node.id}</h3>
-          <div class="overflow-x-auto rounded-lg border border-gray-200">
-          <table class="min-w-full divide-y divide-gray-200 text-sm">
-          <thead class="bg-gray-100">
-            <tr><th class="px-4 py-2 text-left font-medium text-gray-900">Destination</th>
-            <th class="px-4 py-2 text-left font-medium text-gray-900">Next Hop</th>
-            <th class="px-4 py-2 text-left font-medium text-gray-900">Cost</th></tr>
-          </thead><tbody class="divide-y divide-gray-200 bg-white">`;
-        if (table) {
-          Object.entries(table).sort().forEach(([dest, info]) => {
-            const isUpdated = updatedEntries[node.id] && updatedEntries[node.id].has(dest);
-            html += `<tr class="${isUpdated ? 'table-cell-updated' : ''}">
-              <td class="px-4 py-2 font-medium text-gray-900">${dest}</td>
-              <td class="px-4 py-2 text-gray-700">${info.nextHop}</td>
-              <td class="px-4 py-2 text-gray-700">${info.cost}</td></tr>`;
-          });
-        }
-        html += `</tbody></table></div>`;
-        container.innerHTML = html;
-        routingTablesContainer.appendChild(container);
-      });
-    }
-
-    function startDrag(e) {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      for (let node of nodes) {
-        if (Math.hypot(x - node.x, y - node.y) < 20) {
-          isDragging = true;
-          draggedNode = node;
-          offsetX = x - node.x;
-          offsetY = y - node.y;
-          break;
-        }
-      }
-    }
-
-    function drag(e) {
-      if (isDragging && draggedNode) {
-        const rect = canvas.getBoundingClientRect();
-        draggedNode.x = e.clientX - rect.left - offsetX;
-        draggedNode.y = e.clientY - rect.top - offsetY;
-        drawAll();
-      }
-    }
-
-    function stopDrag() {
-      isDragging = false;
-      draggedNode = null;
-    }
-
-    function showModal(type) {
-      if (type === 'addNode') {
-        modalTitle.textContent = 'Add a New Node';
-        modalBody.innerHTML = `
-          <label class="block text-sm font-medium text-gray-700">Node Name</label>
-          <input type="text" id="nodeName" maxlength="3" class="mt-1 block w-full border rounded p-2">`;
-        modalConfirm.onclick = confirmAddNode;
-      } else if (type === 'addLink') {
-        if (nodes.length < 2) {
-          statusEl.textContent = 'You need at least two nodes to add a link.';
-          setTimeout(() => statusEl.textContent = '', 3000);
-          return;
-        }
-        let opts = nodes.map(n => `<option value="${n.id}">${n.id}</option>`).join('');
-        modalTitle.textContent = 'Add a New Link';
-        modalBody.innerHTML = `
-          <label>Source Node</label><select id="sourceNode" class="block w-full border rounded p-2">${opts}</select>
-          <label>Target Node</label><select id="targetNode" class="block w-full border rounded p-2">${opts}</select>
-          <label>Cost</label><input type="number" id="linkCost" min="1" value="1" class="block w-full border rounded p-2">`;
-        modalConfirm.onclick = confirmAddLink;
-      }
-      modal.classList.remove('hidden');
-    }
-
-    function hideModal() { modal.classList.add('hidden'); }
-
-    function confirmAddNode() {
-      const name = document.getElementById('nodeName').value.trim().toUpperCase();
-      if (!name) return alert("Node name cannot be empty.");
-      if (nodes.some(n => n.id === name)) return alert("Node already exists.");
-      nodes.push({ id: name, x: 80 + Math.random() * (canvas.width - 160), y: 80 + Math.random() * (canvas.height - 160) });
-      routingTables[name] = { [name]: { nextHop: name, cost: 0 } };
-      hideModal();
-      drawAll();
-    }
-
-    function confirmAddLink() {
-      const s = document.getElementById('sourceNode').value;
-      const t = document.getElementById('targetNode').value;
-      const c = parseInt(document.getElementById('linkCost').value);
-      if (s === t) return alert("Source and target must differ.");
-      if (isNaN(c) || c <= 0) return alert("Cost must be positive.");
-      if (links.some(l => (l.source === s && l.target === t) || (l.source === t && l.target === s))) return alert("Link exists.");
-      links.push({ source: s, target: t, cost: c });
-      routingTables[s][t] = { nextHop: t, cost: c };
-      routingTables[t][s] = { nextHop: s, cost: c };
-      hideModal();
-      drawAll();
-    }
-
-    function updateStep() {
-      if (nodes.length === 0) {
-        statusEl.textContent = 'Add nodes first.';
-        setTimeout(() => statusEl.textContent = '', 2000);
-        return false;
-      }
-      let changed = false;
-      const updated = {};
-      const old = JSON.parse(JSON.stringify(routingTables));
-      for (let node of nodes) {
-        const neighbors = links.filter(l => l.source === node.id || l.target === node.id)
-          .map(l => (l.source === node.id ? l.target : l.source));
-        for (let nb of neighbors) {
-          const nbTable = old[nb];
-          const costToNb = links.find(l => (l.source === node.id && l.target === nb) || (l.source === nb && l.target === node.id)).cost;
-          for (let dest in nbTable) {
-            const newCost = costToNb + nbTable[dest].cost;
-            if (!routingTables[node.id][dest] || newCost < routingTables[node.id][dest].cost) {
-              routingTables[node.id][dest] = { nextHop: nb, cost: newCost };
-              changed = true;
-              if (!updated[node.id]) updated[node.id] = new Set();
-              updated[node.id].add(dest);
-            }
-          }
-        }
-      }
-      if (changed) statusEl.textContent = "Tables updated...";
-      else {
-        statusEl.textContent = "Convergence reached. No more updates.";
-        if (simulationInterval) {
-          clearInterval(simulationInterval);
-          simulationInterval = null;
-          document.getElementById('autoRunBtn').textContent = 'Auto-Run';
-        }
-      }
-      updateRoutingTablesUI(updated);
-      return changed;
-    }
-
-    function toggleAutoRun() {
-      const btn = document.getElementById('autoRunBtn');
-      if (simulationInterval) {
-        clearInterval(simulationInterval);
-        simulationInterval = null;
-        btn.textContent = 'Auto-Run';
-        statusEl.textContent = 'Auto-run paused.';
-      } else {
-        btn.textContent = 'Pause';
-        statusEl.textContent = 'Auto-running...';
-        simulationInterval = setInterval(() => {
-          const changed = updateStep();
-          if (!changed) {
-            clearInterval(simulationInterval);
-            simulationInterval = null;
-            btn.textContent = 'Auto-Run';
-            statusEl.textContent = 'Convergence reached. Auto-run stopped.';
-          }
-        }, 1500);
-      }
-    }
-
-    window.onload = initialize;
-  </script>
-</body>
-</html>
+if __name__ == "__main__":
+    n, input_matrix = get_input()
+    graph = make_2d_matrix(n, input_matrix)
+    shortest_paths = find_shortest_paths(n, graph)
+    print_answer(shortest_paths)
